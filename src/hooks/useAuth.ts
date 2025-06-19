@@ -1,109 +1,102 @@
-import { useState, useEffect } from 'react'
-import { User, Session } from '@supabase/supabase-js'
-import { authAPI, userAPI } from '../services/api'
+// src/hooks/useAuth.ts
 
-interface ExtendedUser extends User {
+import { useState, useEffect } from 'react'
+import { Session, User } from '@supabase/supabase-js'
+import { supabase } from '../utils/supabaseClient'
+
+export interface ExtendedUser extends User {
   is_admin?: boolean
 }
 
 export function useAuth() {
-  const [user, setUser] = useState<ExtendedUser | null>(null)
   const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<ExtendedUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let mounted = true
+    let isMounted = true
 
-    // Function to set user with admin status
-    const setUserWithProfile = async (authUser: User | null) => {
-      if (!mounted) return
+    async function loadInitialSession() {
+      // 1) Try to read any existing session from localStorage
+      const {
+        data: { session: initialSession },
+      } = await supabase.auth.getSession()
 
-      if (authUser) {
+      if (!isMounted) return
+      setSession(initialSession)
+
+      if (initialSession?.user) {
+        // Optionally fetch extra profile data, e.g. is_admin
         try {
-          // Fetch user profile to get admin status
-          const { data: profile } = await userAPI.getProfile(authUser.id)
-          const extendedUser: ExtendedUser = {
-            ...authUser,
-            is_admin: profile?.is_admin || false
-          }
-          setUser(extendedUser)
-        } catch (error) {
-          console.error('Error fetching user profile:', error)
-          // Set user without admin status if profile fetch fails
-          setUser(authUser)
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('is_admin')
+            .eq('id', initialSession.user.id)
+            .single()
+
+          setUser({
+            ...initialSession.user,
+            is_admin: profile?.is_admin ?? false,
+          })
+        } catch {
+          setUser(initialSession.user)
         }
       } else {
         setUser(null)
       }
+
+      setLoading(false)
     }
 
-    // Initialize auth state
-    const initializeAuth = async () => {
-      try {
-        // Get initial session
-        const { session: initialSession } = await authAPI.getSession()
-        
-        if (!mounted) return
+    loadInitialSession()
 
-        setSession(initialSession)
-        await setUserWithProfile(initialSession?.user || null)
-      } catch (error) {
-        console.error('Error initializing auth:', error)
-        if (mounted) {
-          setSession(null)
+    // 2) Subscribe to auth changes (login, logout, token refresh, etc)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        if (!isMounted) return
+
+        setSession(newSession)
+
+        if (newSession?.user) {
+          // Re-fetch profile if needed
+          try {
+            const { data: profile } = await supabase
+              .from('user_profiles')
+              .select('is_admin')
+              .eq('id', newSession.user.id)
+              .single()
+
+            setUser({
+              ...newSession.user,
+              is_admin: profile?.is_admin ?? false,
+            })
+          } catch {
+            setUser(newSession.user)
+          }
+        } else {
           setUser(null)
         }
-      } finally {
-        if (mounted) {
-          setLoading(false)
-        }
       }
-    }
+    )
 
-    // Start initialization
-    initializeAuth()
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = authAPI.onAuthStateChange(async (event, session) => {
-      if (!mounted) return
-
-      console.log('Auth state changed:', event, session?.user?.email)
-      
-      setSession(session)
-      await setUserWithProfile(session?.user || null)
-      
-      // Only set loading to false after the initial load
-      if (loading) {
-        setLoading(false)
-      }
-    })
-
-    // Cleanup function
     return () => {
-      mounted = false
+      isMounted = false
       subscription.unsubscribe()
     }
-  }, []) // Remove loading from dependencies to avoid infinite loops
+  }, [])
 
-  const signIn = async (email: string, password: string) => {
-    const result = await authAPI.signIn(email, password)
-    return result
-  }
+  // Expose signIn, signUp, signOut wrappers if you like:
+  const signIn = (email: string, password: string) =>
+    supabase.auth.signInWithPassword({ email, password })
 
-  const signUp = async (email: string, password: string, username: string) => {
-    const result = await authAPI.signUp(email, password, username)
-    return result
-  }
+  const signUp = (email: string, password: string) =>
+    supabase.auth.signUp({ email, password })
 
-  const signOut = async () => {
-    const result = await authAPI.signOut()
-    // Clear local state immediately
-    setUser(null)
-    setSession(null)
-    return result
-  }
+  const signOut = () =>
+    supabase.auth.signOut().then(() => {
+      setUser(null)
+      setSession(null)
+    })
 
   return {
     user,
