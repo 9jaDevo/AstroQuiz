@@ -13,6 +13,7 @@ export function useAuth() {
 
   useEffect(() => {
     let mounted = true
+    let firstEventHandled = false
 
     async function loadInitialSession() {
       try {
@@ -31,12 +32,11 @@ export function useAuth() {
             .select('is_admin')
             .eq('id', initialSession.user.id)
             .single()
-          if (error) throw error
-
-          setUser({
-            ...initialSession.user,
-            is_admin: profile?.is_admin ?? false,
-          })
+          if (!error && profile) {
+            setUser({ ...initialSession.user, is_admin: profile.is_admin })
+          } else {
+            setUser(initialSession.user)
+          }
         } else {
           setUser(null)
         }
@@ -47,40 +47,48 @@ export function useAuth() {
           setUser(null)
         }
       } finally {
-        if (mounted) setLoading(false)
+        if (mounted) {
+          setLoading(false)
+          firstEventHandled = true
+        }
       }
     }
 
     loadInitialSession()
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      console.log('[useAuth] auth state change:', _event, newSession)
-      if (!mounted) return
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        console.log('[useAuth] auth state change:', _event, newSession)
 
-      setSession(newSession)
-      if (newSession?.user) {
-        // re-fetch admin flag
-        try {
-          const { data: profile, error } = await supabase
-            .from('user_profiles')
-            .select('is_admin')
-            .eq('id', newSession.user.id)
-            .single()
-          if (error) throw error
+        if (!mounted) return
 
-          setUser({
-            ...newSession.user,
-            is_admin: profile?.is_admin ?? false,
-          })
-        } catch {
-          setUser(newSession.user)
+        setSession(newSession)
+        if (newSession?.user) {
+          try {
+            const { data: profile, error } = await supabase
+              .from('user_profiles')
+              .select('is_admin')
+              .eq('id', newSession.user.id)
+              .single()
+            if (!error && profile) {
+              setUser({ ...newSession.user, is_admin: profile.is_admin })
+            } else {
+              setUser(newSession.user)
+            }
+          } catch {
+            setUser(newSession.user)
+          }
+        } else {
+          setUser(null)
         }
-      } else {
-        setUser(null)
+
+        // as soon as we handle the first auth event, clear loading
+        if (mounted && !firstEventHandled) {
+          setLoading(false)
+          firstEventHandled = true
+        }
       }
-    })
+    )
 
     return () => {
       mounted = false
