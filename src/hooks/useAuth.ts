@@ -12,59 +12,97 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Get initial session
-    authAPI.getSession().then(async ({ session }) => {
-      setSession(session)
-      
-      if (session?.user) {
-        // Fetch user profile to get admin status
-        const { data: profile } = await userAPI.getProfile(session.user.id)
-        const extendedUser: ExtendedUser = {
-          ...session.user,
-          is_admin: profile?.is_admin || false
+    let mounted = true
+
+    // Function to set user with admin status
+    const setUserWithProfile = async (authUser: User | null) => {
+      if (!mounted) return
+
+      if (authUser) {
+        try {
+          // Fetch user profile to get admin status
+          const { data: profile } = await userAPI.getProfile(authUser.id)
+          const extendedUser: ExtendedUser = {
+            ...authUser,
+            is_admin: profile?.is_admin || false
+          }
+          setUser(extendedUser)
+        } catch (error) {
+          console.error('Error fetching user profile:', error)
+          // Set user without admin status if profile fetch fails
+          setUser(authUser)
         }
-        setUser(extendedUser)
       } else {
         setUser(null)
       }
-      
-      setLoading(false)
-    })
+    }
+
+    // Initialize auth state
+    const initializeAuth = async () => {
+      try {
+        // Get initial session
+        const { session: initialSession } = await authAPI.getSession()
+        
+        if (!mounted) return
+
+        setSession(initialSession)
+        await setUserWithProfile(initialSession?.user || null)
+      } catch (error) {
+        console.error('Error initializing auth:', error)
+        if (mounted) {
+          setSession(null)
+          setUser(null)
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    // Start initialization
+    initializeAuth()
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = authAPI.onAuthStateChange(async (_event, session) => {
+    } = authAPI.onAuthStateChange(async (event, session) => {
+      if (!mounted) return
+
+      console.log('Auth state changed:', event, session?.user?.email)
+      
       setSession(session)
+      await setUserWithProfile(session?.user || null)
       
-      if (session?.user) {
-        // Fetch user profile to get admin status
-        const { data: profile } = await userAPI.getProfile(session.user.id)
-        const extendedUser: ExtendedUser = {
-          ...session.user,
-          is_admin: profile?.is_admin || false
-        }
-        setUser(extendedUser)
-      } else {
-        setUser(null)
+      // Only set loading to false after the initial load
+      if (loading) {
+        setLoading(false)
       }
-      
-      setLoading(false)
     })
 
-    return () => subscription.unsubscribe()
-  }, [])
+    // Cleanup function
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, []) // Remove loading from dependencies to avoid infinite loops
 
   const signIn = async (email: string, password: string) => {
-    return await authAPI.signIn(email, password)
+    const result = await authAPI.signIn(email, password)
+    return result
   }
 
   const signUp = async (email: string, password: string, username: string) => {
-    return await authAPI.signUp(email, password, username)
+    const result = await authAPI.signUp(email, password, username)
+    return result
   }
 
   const signOut = async () => {
-    return await authAPI.signOut()
+    const result = await authAPI.signOut()
+    // Clear local state immediately
+    setUser(null)
+    setSession(null)
+    return result
   }
 
   return {

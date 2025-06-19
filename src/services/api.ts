@@ -21,6 +21,7 @@ export interface UserProfile {
   games_played: number
   is_admin: boolean
   created_at: string
+  has_suspicious_sessions?: boolean
 }
 
 export interface Question {
@@ -126,7 +127,7 @@ export const authAPI = {
 
   async getCurrentUser() {
     const { data: { user }, error } = await supabase.auth.getUser()
-    return { data, error }
+    return { data: user, error }
   },
 
   async getSession() {

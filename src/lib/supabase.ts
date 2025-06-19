@@ -7,7 +7,37 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Enable automatic token refresh
+    autoRefreshToken: true,
+    // Persist session in localStorage
+    persistSession: true,
+    // Detect session from URL on redirect
+    detectSessionInUrl: true,
+    // Storage key for session persistence
+    storageKey: 'astroquiz-auth-token',
+    // Custom storage implementation (optional)
+    storage: {
+      getItem: (key: string) => {
+        if (typeof window !== 'undefined') {
+          return window.localStorage.getItem(key)
+        }
+        return null
+      },
+      setItem: (key: string, value: string) => {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(key, value)
+        }
+      },
+      removeItem: (key: string) => {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(key)
+        }
+      },
+    },
+  },
+})
 
 export type Database = {
   public: {
