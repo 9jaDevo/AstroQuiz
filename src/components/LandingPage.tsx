@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { 
   Telescope, 
@@ -12,8 +12,11 @@ import {
   Target,
   Globe
 } from 'lucide-react'
+import VideoModal from './VideoModal'
 
 export default function LandingPage() {
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false)
+
   const features = [
     {
       icon: <Target className="h-8 w-8" />,
@@ -117,8 +120,14 @@ export default function LandingPage() {
               <span>Start Learning</span>
               <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform duration-200" />
             </Link>
-            <button className="px-8 py-4 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold rounded-lg transition-all duration-300 transform hover:scale-105">
-              Watch Demo
+            <button 
+              onClick={() => setIsVideoModalOpen(true)}
+              className="group px-8 py-4 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold rounded-lg transition-all duration-300 transform hover:scale-105 flex items-center space-x-2"
+            >
+              <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center">
+                <Play className="h-3 w-3 text-white fill-current ml-0.5" />
+              </div>
+              <span>Watch Demo</span>
             </button>
           </div>
 
@@ -270,6 +279,14 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Video Modal */}
+      <VideoModal
+        isOpen={isVideoModalOpen}
+        onClose={() => setIsVideoModalOpen(false)}
+        videoId="0t0AnnrSjck"
+        title="AstroQuiz Demo - Learn Astronomy Through Interactive Quizzes"
+      />
     </div>
   )
 }
