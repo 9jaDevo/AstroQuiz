@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Session, User } from '@supabase/supabase-js'
-import { supabase } from '../utils/supabaseClient'
+import { supabase } from '../lib/supabase' 
 
 export interface ExtendedUser extends User {
   is_admin?: boolean
