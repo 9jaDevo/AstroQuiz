@@ -1,6 +1,7 @@
+// src/hooks/useAuth.ts
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase' 
-import type { User, Session } from '@supabase/supabase-js'
+import type { Session, User } from '@supabase/supabase-js'
 
 export interface ExtendedUser extends User {
   is_admin?: boolean
@@ -8,94 +9,68 @@ export interface ExtendedUser extends User {
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null)
-  const [user, setUser]       = useState<ExtendedUser | null>(null)
+  const [user,    setUser]    = useState<ExtendedUser | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    let mounted = true
-    let firstEventHandled = false
+  // shared handler for every auth event
+  const handleAuth = async (event: string, sess: Session | null) => {
+    console.log('[useAuth] event:', event, sess)
 
-    async function loadInitialSession() {
-      try {
-        const {
-          data: { session: initialSession },
-        } = await supabase.auth.getSession()
-        console.log('[useAuth] initialSession:', initialSession)
-
-        if (!mounted) return
-        setSession(initialSession)
-
-        if (initialSession?.user) {
-          // fetch your is_admin flag
-          const { data: profile, error } = await supabase
-            .from('user_profiles')
-            .select('is_admin')
-            .eq('id', initialSession.user.id)
-            .single()
-          if (!error && profile) {
-            setUser({ ...initialSession.user, is_admin: profile.is_admin })
-          } else {
-            setUser(initialSession.user)
-          }
-        } else {
-          setUser(null)
-        }
-      } catch (err) {
-        console.error('[useAuth] getSession error:', err)
-        if (mounted) {
-          setSession(null)
-          setUser(null)
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false)
-          firstEventHandled = true
-        }
-      }
+    // signed out or refresh failed
+    if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESH_FAILED') {
+      setSession(null)
+      setUser(null)
+      setLoading(false)
+      return
     }
 
-    loadInitialSession()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
-        console.log('[useAuth] auth state change:', _event, newSession)
-
-        if (!mounted) return
-
-        setSession(newSession)
-        if (newSession?.user) {
-          try {
-            const { data: profile, error } = await supabase
-              .from('user_profiles')
-              .select('is_admin')
-              .eq('id', newSession.user.id)
-              .single()
-            if (!error && profile) {
-              setUser({ ...newSession.user, is_admin: profile.is_admin })
-            } else {
-              setUser(newSession.user)
-            }
-          } catch {
-            setUser(newSession.user)
-          }
-        } else {
-          setUser(null)
-        }
-
-        // as soon as we handle the first auth event, clear loading
-        if (mounted && !firstEventHandled) {
-          setLoading(false)
-          firstEventHandled = true
-        }
+    // initial or signed in
+    if (sess?.user) {
+      setSession(sess)
+      // fetch is_admin
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('is_admin')
+          .eq('id', sess.user.id)
+          .single()
+        setUser({ ...sess.user, is_admin: profile?.is_admin ?? false })
+      } catch {
+        setUser(sess.user)
       }
-    )
+    } else {
+      setSession(null)
+      setUser(null)
+    }
+
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    // subscribe once to all auth events
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, sess) => {
+      handleAuth(event, sess)
+    })
+
+    // trigger INITIAL_SESSION exactly once
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) =>
+        handleAuth('INITIAL_SESSION', session)
+      )
+      .catch((err) => {
+        console.error('[useAuth] getSession error', err)
+        setLoading(false)
+      })
 
     return () => {
-      mounted = false
       subscription.unsubscribe()
     }
   }, [])
 
+  // your signIn / signUp / signOut wrappers
   const signIn = (email: string, password: string) =>
     supabase.auth.signInWithPassword({ email, password })
 
